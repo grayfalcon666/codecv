@@ -13,10 +13,11 @@ const emit = defineEmits([
   'download-native',
   'download-md',
   'import-md',
-  'download-picture'
+  'download-picture',
+  'save-resume'
 ])
 
-const { exportFile, importFile, fileName } = useFile(emit)
+const { exportFile, importFile, saveResume, fileName } = useFile(emit)
 const { open, toggle } = useSwitch()
 </script>
 
@@ -33,6 +34,7 @@ const { open, toggle } = useSwitch()
     />
     <ExportTotal />
     <Reward />
+    <button class="exporter save-resume btn" @click="saveResume">保存</button>
     <button class="exporter server-export btn" @click="exportFile('dynamic')">导出PDF</button>
     <button class="exporter local-export btn" @click="exportFile('native')">备用导出</button>
     <div class="operator">

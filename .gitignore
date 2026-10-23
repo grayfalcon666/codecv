@@ -23,4 +23,12 @@ dist-ssr
 *.sln
 *.sw?
 .env
+.env.*
+!.env.example
 src/templates/modules/[0-9]*
+
+# 本地简历保存目录（server.mjs）
+resumes
+
+# 浏览器调试抓包产物
+debug_file

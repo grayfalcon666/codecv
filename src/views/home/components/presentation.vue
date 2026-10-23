@@ -19,7 +19,7 @@ const { presentationData, presentationIndex, styleConfig } = usePresentation()
         :style="styleConfig[idx]"
         :src="theme.img"
         :alt="theme.name"
-        @click="$router.push({ path: '/editor', query: { type: theme.type } })"
+        @click="$router.push({ path: '/editor', query: { type: theme.type, fresh: 1 } })"
       />
     </el-tooltip>
   </div>

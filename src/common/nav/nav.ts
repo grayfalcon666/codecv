@@ -9,6 +9,11 @@ const nav = [
     path: '/template',
     tooltip: false
   },
+  {
+    name: '我的简历',
+    path: '/resume',
+    tooltip: false
+  },
 
   {
     name: '语法助手',

@@ -12,7 +12,7 @@ import Footer from './footer.vue'
     <router-view v-slot="{ Component }">
       <keep-alive
         :max="10"
-        include="home,editor,syntax,recruit,template,update,community,communityEditor,communityDetail"
+        include="home,editor,syntax,recruit,template,update,community,communityEditor,communityDetail,resume"
       >
         <component :is="Component" />
       </keep-alive>

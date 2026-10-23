@@ -6,7 +6,7 @@ defineProps<{ theme: TemplateType }>()
 const router = useRouter()
 
 const edit = (type: string) => {
-  router.push({ path: '/editor', query: { type } })
+  router.push({ path: '/editor', query: { type, fresh: 1 } })
 }
 </script>
 

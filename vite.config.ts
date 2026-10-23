@@ -79,7 +79,7 @@ export default ({ mode }) => {
         plugins: [
           /* globals,  */ viteCompressionPlugin,
           viteImageminPlugin,
-          visualizer({ open: true })
+          visualizer({ open: false }) // 容器里构建会自动调 Windows powershell 打开 stats.html 导致构建失败，关闭自动打开
         ],
         output: {
           chunkFileNames: 'js/[name]-[hash].js',

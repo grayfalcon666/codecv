@@ -81,7 +81,7 @@ const { repoStars, createAnimateEffect } = useGiteeRepoStars()
           v-for="(t, idx) in templates.slice(0, 4)"
           :key="idx"
           :data-aos="animate[idx]"
-          @click="$router.push({ path: '/editor', query: { type: t.type } })"
+          @click="$router.push({ path: '/editor', query: { type: t.type, fresh: 1 } })"
         >
           <img :src="t.img" alt="" />
           <span>{{ t.hot }}+使用</span>

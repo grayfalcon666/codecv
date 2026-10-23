@@ -29,7 +29,7 @@ const { flag, close } = useNotification()
             v-for="(t, idx) in ranks"
             :key="t.type"
             class="flex hover pointer"
-            @click="$router.push({ path: `/editor`, query: { type: t.type } })"
+            @click="$router.push({ path: `/editor`, query: { type: t.type, fresh: 1 } })"
           >
             <el-tooltip :content="t.name" placement="left">
               <p class="line-1">

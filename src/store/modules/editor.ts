@@ -39,6 +39,10 @@ const useEditorStore = defineStore('editorStore', {
       if (!nv) return
       setLocalStorage(`${MARKDOWN_CONTENT}-${resumeType}`, nv)
     },
+    // 只设置内容 不写入本地草稿（从服务器载入简历时使用 避免污染模板默认内容）
+    setMDContentOnly(nv: string) {
+      this.MDContent = nv
+    },
     // 切换编辑模式
     setWritableMode(originHTML: HTMLElement) {
       this.writable = !this.writable

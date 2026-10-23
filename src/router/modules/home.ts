@@ -7,7 +7,6 @@ export default {
   children: [
     {
       path: '/home',
-      name: 'home',
       component: () => import('@/views/home/home.vue')
     }
   ]

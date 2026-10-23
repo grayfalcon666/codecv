@@ -7,7 +7,6 @@ export default {
   children: [
     {
       path: '/template',
-      name: 'template',
       component: () => import('@/views/template/template.vue')
     }
   ]

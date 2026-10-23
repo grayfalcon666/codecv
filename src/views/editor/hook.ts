@@ -1,6 +1,8 @@
 import { onActivated, onDeactivated, Ref, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useDebounceFn, useThrottleFn } from '@vueuse/core'
+import { ElMessageBox } from 'element-plus'
+import 'element-plus/es/components/message-box/style/css'
 
 import { getLocalStorage } from '@/common/localstorage'
 import { errorMessage, successMessage, warningMessage } from '@/common/message'
@@ -9,6 +11,7 @@ import { ensureEmptyPreWhiteSpace, splitPage } from './components/tabbar/hook'
 import useEditorStore from '@/store/modules/editor'
 import { convertDOM } from '@/utils/moduleCombine'
 import { resumeExport } from '@/api/modules/resume'
+import { listResumes, saveResume as saveResumeAPI, deleteResume } from '@/api/modules/resumeStorage'
 import {
   CUSTOM_CSS_STYLE,
   CUSTOM_MARKDOWN_PRIMARY_COLOR,
@@ -65,6 +68,17 @@ export function useResumeType() {
   const resumeType = ref(route.query.type ? String(route.query.type) : '10front_end')
   onActivated(() => {
     resumeType.value = route.query.type ? String(route.query.type) : '10front_end'
+    // 「使用模板」入口(fresh=1)：丢弃该模板的本地草稿 以模板原始内容开始
+    // 防止之前编辑留下的草稿覆盖模板默认内容
+    if (route.query.fresh) {
+      localStorage.removeItem(`markdown-content-${resumeType.value}`)
+      const [path, queryStr] = location.hash.split('?')
+      const params = new URLSearchParams(queryStr || '')
+      params.delete('fresh')
+      const cleanHash = path + (params.toString() ? `?${params.toString()}` : '')
+      history.replaceState(null, '', location.pathname + cleanHash)
+      location.reload()
+    }
   })
   return {
     resumeType
@@ -148,6 +162,61 @@ export function useDownLoad(type: Ref<string>) {
     downloadDynamic,
     downloadNative
   }
+}
+
+// 从「我的简历」打开的文件在服务器上的文件名（重命名保存后同步更新）
+export const savedFileName = ref('')
+
+// 保存简历到自己的服务器（见仓库根目录 server.mjs），连同当前模板类型一起存
+export function useSaveResume(resumeType: Ref<string>) {
+  const editorStore = useEditorStore()
+  const route = useRoute()
+  const router = useRouter()
+  async function saveResume(name: string) {
+    const fileName = (name || '').trim()
+    if (!fileName) return warningMessage('请先在上方输入框填写简历名称')
+    const content = editorStore.MDContent
+    if (!content || !content.trim()) return warningMessage('简历内容为空，无需保存')
+    const oldName = savedFileName.value
+    const renamed = oldName && oldName !== fileName
+    try {
+      const list = await listResumes()
+      // 正在更新的这份简历（同名保存）不提示；只有和其他简历重名才提示覆盖
+      const collision = list.some(item => item.name === fileName && item.name !== oldName)
+      if (collision) {
+        try {
+          await ElMessageBox.confirm('服务器上已存在同名简历，是否覆盖？', '提示', {
+            type: 'warning'
+          })
+        } catch {
+          return // 用户取消覆盖
+        }
+      }
+    } catch {
+      // 列表拉取失败不阻断保存，保存请求自身会再报错提示
+    }
+    try {
+      await saveResumeAPI(fileName, content, resumeType.value)
+      if (renamed) {
+        // 重命名保存：删除服务器上的旧文件
+        try {
+          await deleteResume(oldName)
+        } catch {
+          // 旧文件删除失败不阻断保存结果
+        }
+        savedFileName.value = fileName
+        document.title = fileName
+        // 同步地址栏 ?file= 参数，页面刷新后仍然加载新文件名
+        if (route.query.file) {
+          router.replace({ query: { ...route.query, file: fileName } })
+        }
+      }
+      successMessage(renamed ? '已保存并同步重命名～' : '已保存到服务器～')
+    } catch (e: any) {
+      errorMessage('保存失败：' + (e?.message || '请检查服务器保存服务是否可用'))
+    }
+  }
+  return { saveResume }
 }
 
 export function useImportMD(resumeType: string) {

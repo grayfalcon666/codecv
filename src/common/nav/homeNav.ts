@@ -4,6 +4,11 @@ const homeNav = [
     path: '/template',
     tooltip: false
   },
+  {
+    name: '我的简历',
+    path: '/resume',
+    tooltip: false
+  },
   // {
   //   name: '求职社区',
   //   path: '/community',

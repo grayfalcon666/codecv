@@ -1,16 +1,48 @@
 <script setup lang="ts">
+import { onActivated } from 'vue'
+import { useRoute } from 'vue-router'
 import Header from './components/header/header.vue'
 import MarkdownRender from '@/views/editor/components/preview/render.vue'
 import Editor from '@/views/editor/components/editor/editorContainer.vue'
-import { useResumeType, useDownLoad, useImportMD, useAvatar, useShowExport } from './hook'
+import {
+  useResumeType,
+  useDownLoad,
+  useImportMD,
+  useAvatar,
+  useShowExport,
+  useSaveResume,
+  savedFileName
+} from './hook'
 import { startGuide } from './components/guide/guide'
+import useEditorStore from '@/store/modules/editor'
+import { getResume } from '@/api/modules/resumeStorage'
+import { errorMessage } from '@/common/message'
 
 const { resumeType } = useResumeType()
 const { downloadDynamic, downloadNative, downloadMD } = useDownLoad(resumeType)
 const { importMD } = useImportMD(resumeType.value)
 const { setAvatar } = useAvatar(resumeType.value)
 const { showExport } = useShowExport()
+const { saveResume } = useSaveResume(resumeType)
+const editorStore = useEditorStore()
+const route = useRoute()
 startGuide()
+
+// 从「我的简历」打开：?file=简历名 → 从服务器载入内容
+onActivated(async () => {
+  if (!route.query.file) {
+    savedFileName.value = ''
+    return
+  }
+  savedFileName.value = String(route.query.file)
+  try {
+    const { content } = await getResume(String(route.query.file))
+    editorStore.setMDContentOnly(content)
+    document.title = String(route.query.file)
+  } catch (e: any) {
+    errorMessage('从服务器加载简历失败：' + (e?.message || ''))
+  }
+})
 </script>
 
 <template>
@@ -20,6 +52,7 @@ startGuide()
     @download-native="downloadNative"
     @download-md="downloadMD"
     @import-md="importMD"
+    @save-resume="saveResume"
   />
   <div id="editor">
     <Editor />
