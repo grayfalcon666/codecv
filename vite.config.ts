@@ -71,6 +71,12 @@ export default ({ mode }) => {
     esbuild: {
       drop: env?.VITE_DROP_CONSOLE === 'true' ? ['console', 'debugger'] : []
     },
+    server: {
+      // 本地开发时把同源接口代理到 server.mjs（PDF/PNG 导出；简历保存走绝对地址不受影响）
+      proxy: {
+        '/api': 'http://localhost:8080'
+      }
+    },
     base: './',
     build: {
       rollupOptions: {

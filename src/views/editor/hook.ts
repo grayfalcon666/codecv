@@ -139,7 +139,7 @@ export function useDownLoad(type: Ref<string>) {
       const errorMsg =
         e.message == 'Failed to fetch'
           ? '国内导出易出错 请重新尝试 有条件的打开梯子后重试或使用备用导出'
-          : '导出出错 请先尝试备用导出方案'
+          : e?.message || '导出出错 请先尝试备用导出方案'
       errorMessage(errorMsg)
     }
     closeLoading()

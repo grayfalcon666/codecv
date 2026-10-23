@@ -82,12 +82,12 @@ async function writeMeta(meta) {
   await fs.writeFile(META_FILE, JSON.stringify(meta), 'utf8')
 }
 
-async function readBody(req) {
+async function readBody(req, max = MAX_BODY) {
   const chunks = []
   let size = 0
   for await (const chunk of req) {
     size += chunk.length
-    if (size > MAX_BODY) throw new Error('payload too large')
+    if (size > max) throw new Error('payload too large')
     chunks.push(chunk)
   }
   return Buffer.concat(chunks).toString('utf8')
@@ -183,6 +183,83 @@ async function handleApi(req, res, url) {
     return true
   }
 
+  // PDF/PNG 导出（内置 Playwright 无头浏览器，未安装时返回 501 提示）
+  if (req.method === 'POST' && url.pathname === '/api/pdf/export') {
+    let body
+    try {
+      body = JSON.parse(await readBody(req, PDF_MAX_BODY))
+    } catch (e) {
+      if (e?.message === 'payload too large') {
+        sendJSON(res, 413, { error: '请求体过大（最大 20MB）' })
+      } else {
+        sendJSON(res, 400, { error: '请求体必须是合法 JSON' })
+      }
+      return true
+    }
+    const content = typeof body.content === 'string' ? body.content : ''
+    if (!content.trim()) {
+      sendJSON(res, 400, { error: 'content 不能为空' })
+      return true
+    }
+    let browser
+    try {
+      browser = await getBrowser()
+    } catch (e) {
+      console.error('browser launch failed:', e?.message)
+      sendJSON(res, 501, {
+        error:
+          '浏览器内核未安装：' +
+          (e?.message || '未知错误') +
+          '（Docker 镜像自带；本地开发请执行 npx playwright-core install --with-deps chromium-headless-shell）'
+      })
+      return true
+    }
+    if (!browser) {
+      sendJSON(res, 501, {
+        error: '服务器未安装 playwright-core（Docker 镜像自带；本地开发请 yarn add -D playwright-core）'
+      })
+      return true
+    }
+    const style = typeof body.style === 'string' ? body.style : ''
+    // 生产环境前端传 link（模板 CSS chunk 的绝对 URL，如 http://host/css/style-xxx.css），
+    // 取 pathname 后直接从自己的 dist 读取内联（模板样式不进 PDF 等于导出白板）
+    let linkCSS = ''
+    const link = typeof body.link === 'string' ? body.link : ''
+    if (link && link !== 'none') {
+      let pathname = link.startsWith('/') ? link : ''
+      if (!pathname) {
+        try {
+          pathname = new URL(link).pathname
+        } catch {
+          pathname = ''
+        }
+      }
+      if (pathname.startsWith('/')) linkCSS = (await readDistFile(pathname)) || ''
+    }
+    try {
+      const result = await withRenderSlot(async () => {
+        const page = await browser.newPage()
+        try {
+          await page.setContent(buildRenderHTML(content, linkCSS, style), { waitUntil: 'load' })
+          await page.evaluate(() => document.fonts.ready)
+          if (body.type === 1) {
+            const png = await page.screenshot({ fullPage: true, type: 'png' })
+            return { picture: { data: [...png] } }
+          }
+          const pdf = await page.pdf({ printBackground: true, preferCSSPageSize: true })
+          return { pdf: { data: [...pdf] } }
+        } finally {
+          await page.close()
+        }
+      })
+      sendJSON(res, 200, result)
+    } catch (e) {
+      console.error('pdf export failed:', e?.message)
+      sendJSON(res, 500, { error: '导出失败：' + (e?.message || '未知错误') })
+    }
+    return true
+  }
+
   return false
 }
 
@@ -208,6 +285,108 @@ function serveStatic(res, url) {
   res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream' })
   createReadStream(target).pipe(res)
 }
+
+// ---------- PDF/PNG 导出（Playwright 无头浏览器，可选依赖）----------
+// 零依赖原则：playwright-core 未安装时本模块 import 失败，导出接口返回 501，其余功能不受影响
+const PDF_MAX_BODY = 20 * 1024 * 1024 // 简历 HTML 可能内联 base64 头像，比保存接口放宽
+const MAX_CONCURRENT_RENDERS = 2
+
+let playwright = null
+let browserPromise = null
+let renderQueue = 0
+
+async function getBrowser() {
+  if (playwright === null) {
+    try {
+      playwright = await import('playwright-core')
+    } catch {
+      playwright = false
+    }
+  }
+  if (!playwright) return null
+  if (!browserPromise) {
+    browserPromise = playwright.chromium
+      .launch({
+        // 容器内运行必需：无沙箱（userns 受限）+ 大页面需要更多共享内存
+        args: ['--no-sandbox', '--disable-dev-shm-usage']
+      })
+      .catch(err => {
+        browserPromise = null
+        throw err
+      })
+  }
+  return browserPromise
+}
+
+async function closeBrowser() {
+  if (browserPromise) {
+    try {
+      ;(await browserPromise).close()
+    } catch {
+      // 关闭失败不影响退出
+    }
+  }
+}
+
+// 简易信号量：限制同时渲染的页面数，防止大简历把单容器拖垮
+async function withRenderSlot(fn) {
+  while (renderQueue >= MAX_CONCURRENT_RENDERS) {
+    await new Promise(resolve => setTimeout(resolve, 100))
+  }
+  renderQueue++
+  try {
+    return await fn()
+  } finally {
+    renderQueue--
+  }
+}
+
+// 从自己的 dist 读取静态文件（link 是构建产物的 CSS chunk 路径，与当前镜像内的 dist 自洽）
+// 注意必须是 async + await：不 await 时 rejection 不会被 try/catch 捕获，会直接穿透成 500
+async function readDistFile(pathname) {
+  try {
+    pathname = decodeURIComponent(String(pathname).split(/[?#]/)[0])
+  } catch {
+    return null
+  }
+  if (pathname === '/') pathname = '/index.html'
+  const filePath = path.resolve(DIST_DIR, '.' + pathname)
+  if (filePath !== DIST_DIR && !filePath.startsWith(DIST_DIR + path.sep)) return null
+  try {
+    return await fs.readFile(filePath, 'utf8')
+  } catch {
+    return null
+  }
+}
+
+// 组装待渲染页面：<base> 指向自身，让页面里的相对路径资源（头像/字体等）走本服务
+function buildRenderHTML(content, linkCSS, style) {
+  return `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<base href="http://127.0.0.1:${PORT}/">
+<style>${linkCSS}</style>
+<style>${style}</style>
+<style>
+/* 容器内安装的是 Noto Sans/Serif CJK，别名映射让模板的字体名精确命中（离线可用，不依赖 Google Fonts） */
+@font-face{font-family:'Noto Sans SC';src:local('Noto Sans CJK SC')}
+@font-face{font-family:'Noto Serif SC';src:local('Noto Serif CJK SC')}
+html,body{margin:0;padding:0}
+</style>
+</head>
+<body>${content}</body>
+</html>`
+}
+
+process.on('SIGINT', async () => {
+  await closeBrowser()
+  process.exit(0)
+})
+process.on('SIGTERM', async () => {
+  await closeBrowser()
+  process.exit(0)
+})
 
 await fs.mkdir(RESUME_DIR, { recursive: true })
 

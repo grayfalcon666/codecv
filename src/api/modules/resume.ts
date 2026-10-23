@@ -8,14 +8,33 @@ export interface IResumeConfig {
 
 const UPSTASH_BASE_URL = import.meta.env.VITE_UPSTASH_BASE_URL as string
 
+// 配了 VITE_EXPORT_URL 走外部导出服务器（兼容原作者方案）；否则走容器内置的 /api/pdf/export（Playwright）
+const EXPORT_URL = (import.meta.env.VITE_EXPORT_URL as string) || '/api/pdf/export'
+
 export async function resumeExport(data: IResumeConfig) {
-  const res = await fetch(import.meta.env.VITE_EXPORT_URL as string, {
+  const selfHosted = !import.meta.env.VITE_EXPORT_URL
+  const headers: Record<string, string> = {}
+  if (selfHosted) {
+    headers['Content-Type'] = 'application/json'
+    const token = (import.meta.env.VITE_RESUME_TOKEN as string) || ''
+    if (token) headers.Authorization = `Bearer ${token}`
+  }
+  const res = await fetch(EXPORT_URL, {
     method: 'POST',
-    body: JSON.stringify(data)
-    // headers: {
-    //   'Content-Type': 'application/json'
-    // }
+    body: JSON.stringify(data),
+    ...(Object.keys(headers).length ? { headers } : {})
   })
+  if (!res.ok) {
+    // 把服务端 error 消息抛给调用方（hook.ts catch 后 errorMessage 展示）
+    let message = `HTTP ${res.status}`
+    try {
+      const parsed = await res.json()
+      if (parsed && parsed.error) message = parsed.error
+    } catch {
+      // 响应体不是 JSON 时保留状态码
+    }
+    throw new Error(message)
+  }
   return await res.json()
 }
 
